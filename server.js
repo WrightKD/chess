@@ -20,7 +20,6 @@ const service = '/chess';
 const PORT = process.env.PORT || 4000;
 
 app.use(express.json());
-app.use(morgan('combined'))
 
 app.get(version.concat(service,"/sessions"), (req, res) => {
     res.json(Sessions);
