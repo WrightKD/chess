@@ -15,6 +15,8 @@ const BLACK = 'b';
 const version = '/v1';
 const service = '/chess';
 
+const PORT = process.env.PORT || 4000;
+
 app.use(express.json());
 
 app.get(version.concat(service,"/sessions"), (req, res) => {
@@ -132,6 +134,6 @@ app.get(version.concat(service,"/history"), (req, res) => {
 });
 
 
-app.listen(process.env.PORT || 4000, () => {
-    console.log("Server running on port 4000");
+app.listen(PORT, () => {
+    console.log("Server running on port ".concat(PORT));
 });
