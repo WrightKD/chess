@@ -1,6 +1,8 @@
 // List of FENS to use : https://docs.google.com/spreadsheets/d/1fWA-9QW-C8Dc-8LDrEemSligWcprkpKif6cNDs4V_mg/edit#gid=0
 
 var express = require("express");
+var morgan = require('morgan')
+
 const { Chess } = require('chess.js');
 const { v4: uuidv4 } = require('uuid');
 
@@ -18,6 +20,7 @@ const service = '/chess';
 const PORT = process.env.PORT || 4000;
 
 app.use(express.json());
+app.use(morgan('combined'))
 
 app.get(version.concat(service,"/sessions"), (req, res) => {
     res.json(Sessions);
