@@ -4,15 +4,15 @@ var express = require("express");
 const { Chess } = require('chess.js');
 const { v4: uuidv4 } = require('uuid');
 
-const PORT = process.env.PORT || 4001;
-
 var app = express();
 
 var Http = require("http").Server(express);
 var io = require('socket.io')(Http);
 
+const PORT = process.env.PORT || 4001;
+
 Http.listen(PORT, () => {
-  console.log("Socket server running on port " + PORT);
+  console.log(`Socket running on port ${PORT}`);
 });
 
 var Lobbies = [];
@@ -44,7 +44,8 @@ io.on("connection", socket => {
     let Lobby = { 'ID': uuidv4(), 'Player1': playerName, 'Player2': null };
     Lobbies.push(Lobby);
     io.emit("lobbies", Lobbies);
-
+    console.log(`lobby id: ${Lobby.ID}`);
+    socket.join(`${Lobby.ID}`);
     //game session
     socket.emit("newGame", createNewSession(Lobby.ID, playerName));
   })
@@ -57,7 +58,7 @@ io.on("connection", socket => {
     io.emit("lobbies", Lobbies);
 
     //game session
-    socket.emit("joinGame", joinGame(lobbyID, playerName));
+    socket.emit("joinGame", joinGame(lobbyID, playerName, socket));
   })
 
   //get lobbies
@@ -67,22 +68,28 @@ io.on("connection", socket => {
 
   //move
   socket.on("move", (sessionID, fromPosition, toPosition) => {
-    socket.emit("moveResult", move(sessionID, fromPosition, toPosition));
+    io.to(`${sessionID}`).emit("moveResult", move(sessionID, fromPosition, toPosition));
   })
 
   //get moves
   socket.on("getMoves", (sessionID, position) => {
-    socket.emit("postMoves", getMoves(sessionID, position));
+    io.to(`${sessionID}`).emit("postMoves", getMoves(sessionID, position));
   })
 
 
   //load/get board
   socket.on("getBoard", (sessionID) => {
-    socket.emit("postBoard", getBoard(sessionID));
+    console.log(`getBoard called with ID: ${sessionID}`)
+    console.log(Object.keys(socket.rooms).filter(item => item!=socket.id));
+    io.to(`${sessionID}`).emit("postBoard", getBoard(sessionID));
   })
 
   socket.on("getMoveHistory", sessionID => {
-    socket.emit("postMoveHistory", getMoveHistory(sessionID));
+    io.to(`${sessionID}`).emit("postMoveHistory", getMoveHistory(sessionID));
+  })
+
+  socket.on("getUsersForSession", sessionID => {
+    io.to(`${sessionID}`).emit("postUsersForSession", getUsersForSession(sessionID));
   })
 
 })
@@ -90,6 +97,7 @@ io.on("connection", socket => {
 //creates default game
 function createNewSession(sessionID, playerName) {
 
+  console.log(`new session ID: ${sessionID}`);
   let White = playerName;
   let Black = null;
   let Fen = null;
@@ -112,9 +120,10 @@ function createNewSession(sessionID, playerName) {
   return { 'SessionID': sessionID, 'Result': true };
 }
 
-function joinGame(sessionID, playerName) {
+function joinGame(sessionID, playerName, sock) {
   if (Sessions[sessionID] != undefined) {
-    Sessions[sessionID].Black = playerName
+    Sessions[sessionID].Black = playerName;
+    sock.join(`${sessionID}`);
     return { 'SessionID': sessionID, 'Result': true };
   }
   else
@@ -127,40 +136,25 @@ function move(sessionID, fromPosition, toPosition) {
 
   let move = game.move({ from: fromPosition, to: toPosition });
 
+  checkGameOver(sessionID);
+
   console.log(move);
 
   return move;
 
-  // let move = game.move(inputMove);
+}
 
-  // console.log(game.ascii());
-  // res = {};
-
-  // if (move === null) {
-
-  //   let current_player = game.turn();
-
-  //   if (current_player == WHITE) {
-  //     current_player = { 'White': session['White'] };
-  //   }
-  //   else {
-  //     current_player = { 'Black': session['Black'] };
-  //   }
-
-  //   error_response["Error"] = "Illegal Move";
-  //   error_response["Move"] = inputMove;
-  //   error_response["Player"] = current_player;
-
-  //   res.statusCode = 408;
-  //   res.error_response = error_response;
-  //   //res.json(error_response);
-  // }
-  // else {
-  //   res.statusCode = 200;
-  //   res.move = move;
-  //   //res.json(move);
-  // }
-
+function checkGameOver(sessionID) {
+  let session = Sessions[sessionID];
+  let game = session['State'];
+  if (game.game_over()) {
+    let winner;
+    if (game.turn === "w")
+      winner = game.White;
+    else
+      winner = game.Black;
+    socket.emit("gameOver", winner);
+  }
 }
 
 function getMoves(sessionID, position) {
@@ -199,8 +193,6 @@ function getBoard(sessionID){
   let session = Sessions[sessionID];
   let game = session['State'];
 
-  console.log(game.board());
-
   return game.board();
 }
 
@@ -213,117 +205,10 @@ function getMoveHistory(sessionID) {
   return { "move history": history };
 }
 
-/*
-app.post(version.concat(service,"/createSession"), function(req, res){
+function getUsersForSession(sessionID)
+{
+  let black = Sessions[sessionID].Black;
+  let white = Sessions[sessionID].White;
 
-    let UUID = uuidv4();
-
-    let White = req.body.White;
-    let Black = req.body.Black;
-    let Fen = req.body.Fen;
-
-    let State = null;
-
-    if(Fen === null)
-    {
-        State = new Chess();
-    }
-    else
-    {
-        State = new Chess(Fen);
-    }
-
-    let CurrentDate = new Date();
-
-    let Game = {'White' : White, 'Black' : Black , 'Start' : CurrentDate.getTime(), 'State' : State};
-
-    Sessions[UUID] = Game;
-
-    res.json({'Session' : UUID, 'Result': true});
-
-});
-
-
-app.post(version.concat(service,"/move"), function(req, res){
-
-    let session = Sessions[req.body.Id];
-    let game = session['State'];
-
-    let move = game.move(req.body.move);
-
-    // console.log(game.ascii());
-
-    if(move === null)
-    {
-
-        let current_player = game.turn();
-
-        if (current_player == WHITE)
-        {
-            current_player = {'White' : session['White']};
-        } 
-        else 
-        {
-            current_player = {'Black' : session['Black']};
-        }
-
-        error_response["Error"] = "Illegal Move";
-        error_response["Move"] = req.body.move;
-        error_response["Player"] = current_player;
-
-        res.statusCode = 408;
-        res.json(error_response);
-    }
-    else
-    {
-        res.statusCode = 200;
-        res.json(move);
-    }
-
-});
-
-
-app.get(version.concat(service,"/moves"), (req, res) => {
-
-    let session = Sessions[req.body.Id];
-    let game = session['State'];
-
-    let current_player = game.turn();
-
-    let conditions = {
-        "check": game.in_check(),
-        "checkmate": game.in_checkmate(),
-        "draw": game.in_draw(),
-        "stalemate": game.in_stalemate(),
-        "threefold-repetition": game.in_threefold_repetition(),
-        "insufficient-material": game.insufficient_material()
-    } 
-
-    if (current_player == WHITE)
-    {
-        current_player = {'white' : session['White']};
-    }
-    else 
-    {
-        current_player = {'black' : session['Black']};
-    };
-
-    let legal_moves = {'current player' : current_player, 'conditions' : conditions, 'legal moves': game.moves()};
-
-    res.json(legal_moves);
-});
-
-app.get(version.concat(service,"/history"), (req, res) => {
-
-    let session = Sessions[req.body.Id];
-    let game = session['State'];
-
-    let history = game.history({ verbose: true })
-
-    res.json({"move history" : history});
-});
-
-
-app.listen(process.env.PORT || 4000, () => {
-    console.log("Server running on port 4000");
-});*/
+  return { playerWhite: white, playerBlack: black};
+}
